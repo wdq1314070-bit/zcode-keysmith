@@ -95,6 +95,28 @@ python3 zcode-keysmith.py doctor
 python3 zcode-keysmith.py verify
 ```
 
+### Windows 命令参考
+
+Windows 版使用 `zcode-keysmith-win.py`，命令结构相同：
+
+```bash
+python3 -m py_compile zcode-keysmith-win.py
+python3 zcode-keysmith-win.py install --dry-run
+python3 zcode-keysmith-win.py install --yes
+python3 zcode-keysmith-win.py doctor
+python3 zcode-keysmith-win.py verify
+python3 zcode-keysmith-win.py uninstall --dry-run
+python3 zcode-keysmith-win.py uninstall --yes
+```
+
+Windows 版差异：
+
+- 持久化走 `HKCU\Environment` 用户环境变量（无 LaunchAgent、无 env 脚本）；
+- `ZCODE_AGENT_SERVER_COMMAND` 指向 `python.exe`，wrapper 路径在 `ZCODE_AGENT_SERVER_ARGS_JSON` 中；
+- wrapper 使用 `subprocess.Popen` + `os.read` 中继线程转发 stdio（Windows 管道修复，见 README「Windows 支持」）；
+- 可观测字段与 macOS 版一致：`wrapper_smoke`、`wrapper_invoked`、`last_wrapper_start`、`zcode_agent_override_supported`、`zcode_runtime_patchable`、`zcode_running`；
+- ZCode 不在默认路径时同样支持 `--zcode-app` / `ZCODE_APP_PATH`。
+
 ---
 
 ## English
@@ -153,3 +175,25 @@ python3 zcode-keysmith.py install --dry-run
 python3 zcode-keysmith.py doctor
 python3 zcode-keysmith.py verify
 ```
+
+### Windows command reference
+
+On Windows, use `zcode-keysmith-win.py` with the same command structure:
+
+```bash
+python3 -m py_compile zcode-keysmith-win.py
+python3 zcode-keysmith-win.py install --dry-run
+python3 zcode-keysmith-win.py install --yes
+python3 zcode-keysmith-win.py doctor
+python3 zcode-keysmith-win.py verify
+python3 zcode-keysmith-win.py uninstall --dry-run
+python3 zcode-keysmith-win.py uninstall --yes
+```
+
+Windows differences:
+
+- Persistence goes through `HKCU\Environment` user environment variables (no LaunchAgent, no env script);
+- `ZCODE_AGENT_SERVER_COMMAND` points at `python.exe`; the wrapper path lives in `ZCODE_AGENT_SERVER_ARGS_JSON`;
+- The wrapper relays stdio with `subprocess.Popen` + `os.read` pump threads (Windows pipe fix, see README "Windows support");
+- Observability fields match the macOS version: `wrapper_smoke`, `wrapper_invoked`, `last_wrapper_start`, `zcode_agent_override_supported`, `zcode_runtime_patchable`, `zcode_running`;
+- `--zcode-app` / `ZCODE_APP_PATH` are supported for non-default ZCode locations.

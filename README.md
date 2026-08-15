@@ -69,6 +69,28 @@ python3 zcode-keysmith.py verify                # 检查链路
 2. 新建任务，输入「你是谁」；
 3. 回到终端运行 `python3 zcode-keysmith.py verify`；`wrapper_invoked: true` 表示 ZCode 已经实际启动过受管理 wrapper。
 
+### Windows 支持
+
+Windows 版使用 `zcode-keysmith-win.py`（macOS 版逻辑的 Windows 移植）：
+
+```bash
+python3 zcode-keysmith-win.py install --dry-run   # 先看写入计划
+python3 zcode-keysmith-win.py install --yes        # 确认后写入
+python3 zcode-keysmith-win.py doctor               # 检查状态
+python3 zcode-keysmith-win.py verify                # 检查链路
+python3 zcode-keysmith-win.py uninstall --yes      # 卸载
+```
+
+与 macOS 版的差异：
+
+- **持久化机制**：macOS 用 `launchctl setenv` + LaunchAgent plist；Windows 写 `HKCU\Environment` 用户环境变量（Explorer 登录时自动加载，等价于用户级 LaunchAgent），旧值备份到 `~/.zcode-keysmith/backups/env-backup-*.json`。写入后广播 `WM_SETTINGCHANGE`。
+- **入口命令**：Windows 的 Node `spawn` 不能直接执行 `.py` 文件（无 shebang），所以 `ZCODE_AGENT_SERVER_COMMAND` 指向 `python.exe`，wrapper 路径放进 `ZCODE_AGENT_SERVER_ARGS_JSON`：`["<managed>\\bin\\zcode-agent-wrapper.py","app-server","--stdio"]`。
+- **stdio 管道**：Windows 管道上 `subprocess.run` 继承句柄不稳定（agent 启动约 1.5s 即退出，报 `ZCode agent transport closed`）；`BufferedReader.read(n)` 会阻塞到读满 n 字节（请求被卡 180s 直到超时）。因此 wrapper 使用 `subprocess.Popen` + 三个中继线程，读取用 `os.read(fd, 65536)`（Windows 管道一有数据立即返回）。
+- **ZCode 路径自动发现**：依次检查 `ZCODE_APP_PATH` 环境变量、注册表 Uninstall 键、`%LOCALAPPDATA%\Programs\ZCode`、`%ProgramFiles%\ZCode`、`D:\ZCode`。
+- **无 LaunchAgent**：Windows 不生成 plist；`~/.zcode-keysmith/bin/zcode-keysmith-env.sh` 也不需要（macOS 专属）。
+
+其余逻辑与 macOS 版一致：ZCode App 原包不被修改（`app_bundle_modified: false`）、runtime 缓存在用户目录打补丁、`wrapper-start.jsonl` 日志、API key/token/MCP/provider 配置由 ZCode 自身管理（安装器不读取、不保存、不打印）。
+
 完整字段含义和 `doctor`/`verify` 输出见 [`docs/reference.md`](docs/reference.md)。
 
 ### 卸载
