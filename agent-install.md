@@ -7,7 +7,7 @@
 ## macOS 版提示词
 
 ```text
-请使用 https://github.com/Jia-Ethan/zcode-keysmith 帮我安装 ZCode App 的 managed true system-role entrypoint。
+请使用 https://github.com/wdq1314070-bit/zcode-keysmith 帮我安装 ZCode App 的 managed true system-role entrypoint。
 
 执行要求：
 1. 先阅读 README.md 和 zcode-keysmith.py。
@@ -54,7 +54,7 @@ Windows 使用 `zcode-keysmith-win.py`（macOS 版逻辑的 Windows 移植，含
 English version:
 
 ```text
-Use https://github.com/Jia-Ethan/zcode-keysmith to install the managed true system-role entrypoint for my local ZCode App.
+Use https://github.com/wdq1314070-bit/zcode-keysmith to install the managed true system-role entrypoint for my local ZCode App.
 
 Requirements:
 1. Read README.md and zcode-keysmith.py first.
