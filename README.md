@@ -1,7 +1,17 @@
-# zcode-keysmith
+<!-- markdownlint-disable MD013 MD033 MD041 -->
 
 <p align="center">
-  <strong>ZCode App managed true system-role entrypoint.</strong>
+  <img src="docs/assets/readme/zcode-keysmith-preview.png" alt="Illustrative zcode-keysmith install preview; actual paths and output vary" width="100%">
+</p>
+<p align="center"><em>Illustrative preview / 示意预览；实际路径与输出以本机 dry-run 为准。</em></p>
+
+<h1 align="center">zcode-keysmith</h1>
+
+<p align="center">先预览、再写入、可撤销的 ZCode App system-role 入口安装器。</p>
+
+<p align="center">
+  <img alt="Source version v0.1.0" src="https://img.shields.io/badge/source-v0.1.0-0099CC">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6DB33F">
 </p>
 
 <p align="center">
@@ -12,62 +22,48 @@
   <a href="LICENSE">License</a>
 </p>
 
-<p align="center">
-  <img alt="ZCode App" src="https://img.shields.io/badge/ZCode-App-111111">
-  <img alt="system role" src="https://img.shields.io/badge/true-system--role-555555">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-6DB33F">
-</p>
-
 ## 简体中文
 
-### 这是什么
+> [!NOTE]
+> 本仓库是 [Jia-Ethan/zcode-keysmith](https://github.com/Jia-Ethan/zcode-keysmith) 的 fork，在原版 macOS 支持之外**新增了 Windows 支持**。上游仅源码发布，本仓库同步上游 `v0.1.0` 内容并维护 `zcode-keysmith-win.py`。
 
-`zcode-keysmith` 为本机 ZCode 桌面端安装一条受管理的 `system-role.md` 入口。它把仓库里的 `examples/system-role.md` 安装成用户目录里的受管理版本，让 ZCode 新启动的 agent-server 进程读取这份文件，进入 ZCode runtime 的 system message 注入路径。**ZCode App 原包保持完整**：安装器只写用户目录和用户 LaunchAgent；API key、provider、MCP、settings 和项目文件继续由 ZCode 自身管理，安装器不读取、不保存、不打印这些内容。
+Keysmith 系列为本地 AI 工具**安全部署、验证和撤销**自定义指令。`zcode-keysmith` 在用户目录安装受管理的 `system-role.md`，经 agent-server wrapper 进入 ZCode runtime 的 system message 路径。**不是** `AGENTS.md` 安装器；`v0.1.0` 仅发布源码，无 Desktop 客户端。
 
-默认写入位置：
+> [!WARNING]
+> 这会改本机 ZCode 的 **agent-server 入口**，影响之后新启动的会话。不改 App 原包，不读 API key / provider / MCP。支持 macOS 与 Windows。默认只预览，显式 `--yes` 才写入。先阅读 [`examples/system-role.md`](examples/system-role.md) 和 [`docs/reference.md`](docs/reference.md)。
 
-```text
-~/.zcode-keysmith/system-role.md
-~/.zcode-keysmith/config.json
-~/.zcode-keysmith/bin/zcode-agent-wrapper.py
-~/.zcode-keysmith/bin/zcode-keysmith-env.sh
-~/Library/LaunchAgents/com.jia.zcode-keysmith.env.plist
-```
+### 选择哪个 Keysmith
 
-### 原理
+| 项目 | 目标工具 | 部署面 | 稳妥安装 | Desktop |
+| --- | --- | --- | --- | --- |
+| [codex-keysmith](https://github.com/Jia-Ethan/codex-keysmith) | Codex | 全局 `~/.codex` 指令 | 稳定 CLI Release | 未签名 Beta |
+| [claude-keysmith](https://github.com/Jia-Ethan/claude-keysmith) | Claude Code | 项目 / 用户 `CLAUDE.md` import | 源码 CLI | 未签名 Beta |
+| [grok-keysmith](https://github.com/Jia-Ethan/grok-keysmith) | Grok Build | 全局 `~/.grok/rules`（不改 `AGENTS.md`） | 稳定 CLI Release | 未签名 Beta |
+| **[zcode-keysmith（本仓库，含 Windows）](https://github.com/wdq1314070-bit/zcode-keysmith)** | ZCode App | 用户目录 system-role + wrapper | 仅源码 | 无 |
 
-ZCode 桌面端启动 agent-server 时会读取两个环境变量：
+### 安装方式
 
-```text
-ZCODE_AGENT_SERVER_COMMAND
-ZCODE_AGENT_SERVER_ARGS_JSON
-```
+**只有源码安装。** 使用上游 [`v0.1.0`](https://github.com/Jia-Ethan/zcode-keysmith/releases/tag/v0.1.0) 的 GitHub 自动源码归档，或 clone 本仓库后运行 `python3 zcode-keysmith.py`（macOS）/ `python3 zcode-keysmith-win.py`（Windows）。没有独立二进制资产、没有 `pip` / npm、没有本仓库 GUI。
 
-`zcode-keysmith` 把 `ZCODE_AGENT_SERVER_COMMAND` 指向 `~/.zcode-keysmith/bin/zcode-agent-wrapper.py`。wrapper 做三件事：
-
-1. 读取 ZCode 自带 runtime：`/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`；
-2. 在用户目录缓存一份 runtime 副本，只替换一处 `customSystemPrompt` 入口，让它优先读取 `~/.zcode-keysmith/system-role.md`；
-3. 用 ZCode 自带的 Electron node 命令启动缓存 runtime。优先使用 Helper 可执行文件（`ZCode Helper.app`），避免 macOS Dock 把后端 agent-server 识别成另一个前台 ZCode；当前 ZCode 包没有 Helper 可执行文件时才回退到主可执行文件。
-
-ZCode runtime 内部会把 `customSystemPrompt` 放进 `injectionTarget: "system"` 的上下文段。这样，`system-role.md` 进入的是 ZCode runtime 的 system message 路径，而不是普通项目说明文件。安装时会对源提示词做一次格式归一化：如果 `examples/system-role.md` 来自 GLM ChatML 导出，外层 `<|im_start|>system:` / `<|im_end|>` 传输标记会被清理，写入 ZCode 的是 system prompt 主体。
-
-### 安装
+### 快速开始
 
 ```bash
-python3 zcode-keysmith.py install --dry-run   # 先看写入计划
-python3 zcode-keysmith.py install --yes        # 确认后写入
-python3 zcode-keysmith.py doctor               # 检查状态
-python3 zcode-keysmith.py verify                # 检查链路
+git clone https://github.com/wdq1314070-bit/zcode-keysmith.git
+cd zcode-keysmith
+# macOS
+python3 zcode-keysmith.py --version
+python3 zcode-keysmith.py install --dry-run
+python3 zcode-keysmith.py install --yes
+python3 zcode-keysmith.py doctor
+
+# Windows
+python3 zcode-keysmith-win.py --version
+python3 zcode-keysmith-win.py install --dry-run
+python3 zcode-keysmith-win.py install --yes
+python3 zcode-keysmith-win.py doctor
 ```
 
-安装器会备份已有受管理文件为 `<filename>.bak_YYYYMMDD_HHMMSS`。`--dry-run` 优先级最高，即使同时传 `install --yes --dry-run`，也只预览。
-
-安装器会更新当前 macOS launchd 环境，并写入用户 LaunchAgent，用于后续登录会话恢复同一组环境变量。**已经打开的 ZCode 主进程需要重新打开一次**才能继承新的 agent-server entrypoint。完成安装后按这个顺序验证：
-
-1. 退出 ZCode，重新打开；
-2. 新建任务，输入「你是谁」；
-3. 回到终端运行 `python3 zcode-keysmith.py verify`；`wrapper_invoked: true` 表示 ZCode 已经实际启动过受管理 wrapper。
+退出并重新打开 ZCode，新建任务后再运行 `python3 zcode-keysmith.py verify`（macOS）或 `python3 zcode-keysmith-win.py verify`（Windows）。非默认 App 路径用 `--zcode-app` 或 `ZCODE_APP_PATH`。`install --dry-run` 仍需能读到可打补丁的本机 runtime。
 
 ### Windows 支持
 
@@ -91,40 +87,37 @@ python3 zcode-keysmith-win.py uninstall --yes      # 卸载
 
 其余逻辑与 macOS 版一致：ZCode App 原包不被修改（`app_bundle_modified: false`）、runtime 缓存在用户目录打补丁、`wrapper-start.jsonl` 日志、API key/token/MCP/provider 配置由 ZCode 自身管理（安装器不读取、不保存、不打印）。
 
-完整字段含义和 `doctor`/`verify` 输出见 [`docs/reference.md`](docs/reference.md)。
+### 会修改什么
 
-### 卸载
+macOS 的受管理路径与行为：
+
+| 路径 | 会发生什么 |
+| --- | --- |
+| `~/.zcode-keysmith/system-role.md` | 写入归一化后的源提示词 |
+| `~/.zcode-keysmith/config.json`、`bin/*` | 受管理配置与 wrapper |
+| `~/Library/LaunchAgents/com.jia.zcode-keysmith.env.plist` | 用户 LaunchAgent |
+| `cache/`、`logs/` | 运行时缓存与 wrapper 日志；卸载不删 |
+
+Windows 版无 LaunchAgent，持久化走 `HKCU\Environment` 用户环境变量（详见上文「Windows 支持」）。不写项目文件，不改 `ZCode.app`。原理见 [`docs/reference.md`](docs/reference.md)。
+
+### 如何撤销
 
 ```bash
-python3 zcode-keysmith.py uninstall --dry-run   # 预览
-python3 zcode-keysmith.py uninstall --yes        # 确认移除
+# macOS
+python3 zcode-keysmith.py uninstall --dry-run
+python3 zcode-keysmith.py uninstall --yes
+
+# Windows
+python3 zcode-keysmith-win.py uninstall --dry-run
+python3 zcode-keysmith-win.py uninstall --yes
 ```
 
-卸载会把受管理文件改名为 `.bak_YYYYMMDD_HHMMSS`，并清理当前 launchd 环境里的 keysmith entrypoint。ZCode App 原包保持完整。
+卸载只把受管理文件改名为 `.bak_*`，并清空当前 launchd / HKCU 环境。没有 `recover` / `restore`；手工回滚需重新加载恢复后的 env 脚本并重启 ZCode，完整步骤见 [`docs/reference.md`](docs/reference.md)。
 
-### ZCode 不在默认路径
+### 平台与 Beta 限制
 
-```bash
-python3 zcode-keysmith.py install --zcode-app /path/to/ZCode.app --dry-run
-# 或
-ZCODE_APP_PATH=/path/to/ZCode.app python3 zcode-keysmith.py install --dry-run
-```
+文档化支持为 macOS（本机 `ZCode.app`）与 Windows（本仓库新增）。`v0.1.0` Release 仅提供 GitHub 自动源码归档；无签名包、无 Desktop Beta。推荐 Python 3.10+。
 
-### 项目结构与验证
+### 进阶文档 · 贡献 · 系列
 
-项目结构、`py_compile`/`pytest` 验证步骤见 [`docs/reference.md`](docs/reference.md)。
-
-### 友链 / Community
-
-本项目接受 LINUX DO 社区佬友监督与反馈：[LINUX DO](https://linux.do)
-
-同系列项目 / Same series:
-
-- [codex-keysmith](https://github.com/Jia-Ethan/codex-keysmith) - Codex CLI 本地配置的版本化指令部署工具，支持预览、hook 隔离、中断恢复与分层卸载。
-- [claude-keysmith](https://github.com/Jia-Ethan/claude-keysmith) - Claude Code `CLAUDE.md` 的受管理 import-block 安装器，用于本地 Markdown 指令文件。
-- [grok-keysmith](https://github.com/Jia-Ethan/grok-keysmith) - Grok Build 的全局 `AGENTS.md` 指令部署工具，支持 compat/hook 隔离、中断恢复与分层卸载。
-- [zcode-keysmith](https://github.com/Jia-Ethan/zcode-keysmith) - ZCode App 的受管理 true system-role 入口，通过 agent-server wrapper 将 `system-role.md` 接入 runtime `customSystemPrompt` 的 system-message 路径。
-
----
-
-English version: [`README.en.md`](README.en.md)。智能体安装提示词见 [`docs/agent-install.md`](docs/agent-install.md)。
+原理、字段与卸载残留见 [`docs/reference.md`](docs/reference.md)；智能体安装见 [`docs/agent-install.md`](docs/agent-install.md)。提交前运行 `python3 -m py_compile zcode-keysmith.py`、`python3 -m py_compile zcode-keysmith-win.py` 与 `python3 -m pytest tests -q`。安装器不读取 API key。社区：[LINUX DO](https://linux.do)。核心系列只有对照表中的四个项目；本仓库为该系列 ZCode 一项的 Windows 增强 fork。

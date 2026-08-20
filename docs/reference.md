@@ -2,11 +2,28 @@
 
 # 命令参考与可观测性字段 / Command reference and observability fields
 
-日常使用只需要 [`README.md`](../README.md) 的「安装」和「原理」；本页是完整字段表和验证步骤。
+日常使用只需要 [`README.md`](../README.md) 的快速开始；本页保存原理、字段表和验证步骤。
 
 ---
 
 ## 简体中文
+
+### 原理
+
+ZCode 桌面端启动 agent-server 时读取：
+
+```text
+ZCODE_AGENT_SERVER_COMMAND
+ZCODE_AGENT_SERVER_ARGS_JSON
+```
+
+安装器把 `ZCODE_AGENT_SERVER_COMMAND` 指向 `~/.zcode-keysmith/bin/zcode-agent-wrapper.py`。wrapper 读取 ZCode 自带 runtime（默认 `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`），在用户目录缓存一份副本，只替换一处 `customSystemPrompt` 入口，使其优先读取 `~/.zcode-keysmith/system-role.md`，再用 ZCode 自带 Electron node 启动缓存 runtime。优先使用 Helper 可执行文件，避免 Dock 把后端识别成另一个前台 ZCode。
+
+ZCode runtime 会把 `customSystemPrompt` 放进 `injectionTarget: "system"` 的上下文段，因此这份文件走的是 system message 路径，不是项目说明文件。若源文件来自 GLM ChatML 导出，外层 `<|im_start|>system:` / `<|im_end|>` 会在写入前被清理。
+
+`v0.1.0` Release **仅提供 GitHub 自动源码归档**，没有独立二进制资产、Desktop 客户端、`pip` / npm 安装包、`--recover` / `--restore` 或分层卸载。安装面只有下载源码归档或 clone 后运行 `zcode-keysmith.py`。文档化支持平台是 macOS + 本机 `ZCode.app`；**Windows 支持由本 fork 提供**（运行 `zcode-keysmith-win.py`），可跳过上方 macOS 专属的 `launchctl` 注入。非 Darwin 会跳过 `launchctl` 注入。
+
+`install --dry-run` 仍会读取源提示词并检查本机 runtime 是否可打补丁。本机找不到可识别的 ZCode 安装时，预览会失败。可用 `--zcode-app` 或 `ZCODE_APP_PATH` 指定路径。
 
 ### 可观测性
 
@@ -67,11 +84,44 @@ python3 zcode-keysmith.py verify --zcode-app /path/to/ZCode.app
 ZCODE_APP_PATH=/path/to/ZCode.app python3 zcode-keysmith.py install --dry-run
 ```
 
+### 卸载残留
+
+`uninstall --yes` 把这五个受管理文件改名为 `.bak_YYYYMMDD_HHMMSS`：`system-role.md`、`config.json`、wrapper、env 脚本、LaunchAgent plist，并用 `launchctl unsetenv` 清空当前会话的 Keysmith 入口。它不删除 `~/.zcode-keysmith/` 目录本身，也不删除 `cache/`、`logs/` 或历史备份。
+
+没有 `recover` / `restore` 子命令。手工回滚时，按卸载输出中的 `removed:` 路径恢复同一批 `.bak_*` 文件，然后运行恢复后的 `~/.zcode-keysmith/bin/zcode-keysmith-env.sh`（或退出登录后重新登录）以重新加载 launchd 环境；退出并重新打开 ZCode，新建任务后运行 `python3 zcode-keysmith.py verify`。只挪回文件不会恢复已被清空的当前 launchd 环境。
+
+安装还会创建 `~/.zcode-keysmith/cache/` 与 `~/.zcode-keysmith/logs/`。wrapper 运行时另写缓存 runtime 副本和 `logs/wrapper-start.jsonl`。这些路径不在 install 的五个逐文件原子写入目标里，卸载也不清理它们；五个文件之间不是一个整体事务。
+
+### Windows 命令参考
+
+Windows 版使用 `zcode-keysmith-win.py`（macOS 版逻辑的 Windows 移植），命令结构相同：
+
+```bash
+python3 -m py_compile zcode-keysmith-win.py
+python3 zcode-keysmith-win.py install --dry-run
+python3 zcode-keysmith-win.py install --yes
+python3 zcode-keysmith-win.py doctor
+python3 zcode-keysmith-win.py verify
+python3 zcode-keysmith-win.py uninstall --dry-run
+python3 zcode-keysmith-win.py uninstall --yes
+```
+
+Windows 版差异（详见 README「Windows 支持」）：
+
+- **持久化**：走 `HKCU\Environment` 用户环境变量（无 LaunchAgent、无 env 脚本），旧值备份到 `~/.zcode-keysmith/backups/env-backup-*.json`，写入后广播 `WM_SETTINGCHANGE`；
+- `ZCODE_AGENT_SERVER_COMMAND` 指向 `python.exe`，wrapper 路径在 `ZCODE_AGENT_SERVER_ARGS_JSON` 中；Windows 的 Node `spawn` 不能直接执行 `.py` 文件（无 shebang）；
+- **卸载**：清空 `HKCU\Environment` 中对应的 Keysmith 入口变量，受管理文件同样改名为 `.bak_YYYYMMDD_HHMMSS`；`cache/`、`logs/` 与历史备份不删；
+- wrapper 使用 `subprocess.Popen` + `os.read` 中继线程转发 stdio（Windows 管道修复：`subprocess.run` 继承句柄不稳定、`BufferedReader.read(n)` 阻塞，导致 agent 约 1.5s 退出或请求卡 180s 超时）；
+- **ZCode 路径自动发现**：依次检查 `ZCODE_APP_PATH`、注册表 Uninstall 键、`%LOCALAPPDATA%\Programs\ZCode`、`%ProgramFiles%\ZCode`、`D:\ZCode`；
+- 可观测字段与 macOS 版一致：`wrapper_smoke`、`wrapper_invoked`、`last_wrapper_start`、`zcode_agent_override_supported`、`zcode_runtime_patchable`、`zcode_running`；
+- ZCode 不在默认路径时同样支持 `--zcode-app` / `ZCODE_APP_PATH`。
+
 ### 项目结构
 
 ```text
 zcode-keysmith/
 ├── zcode-keysmith.py
+├── zcode-keysmith-win.py
 ├── examples/
 │   └── system-role.md
 ├── tests/
@@ -89,37 +139,33 @@ zcode-keysmith/
 
 ```bash
 python3 -m py_compile zcode-keysmith.py
+python3 -m py_compile zcode-keysmith-win.py
 python3 -m pytest tests -q
 python3 zcode-keysmith.py install --dry-run
 python3 zcode-keysmith.py doctor
 python3 zcode-keysmith.py verify
 ```
 
-### Windows 命令参考
-
-Windows 版使用 `zcode-keysmith-win.py`，命令结构相同：
-
-```bash
-python3 -m py_compile zcode-keysmith-win.py
-python3 zcode-keysmith-win.py install --dry-run
-python3 zcode-keysmith-win.py install --yes
-python3 zcode-keysmith-win.py doctor
-python3 zcode-keysmith-win.py verify
-python3 zcode-keysmith-win.py uninstall --dry-run
-python3 zcode-keysmith-win.py uninstall --yes
-```
-
-Windows 版差异：
-
-- 持久化走 `HKCU\Environment` 用户环境变量（无 LaunchAgent、无 env 脚本）；
-- `ZCODE_AGENT_SERVER_COMMAND` 指向 `python.exe`，wrapper 路径在 `ZCODE_AGENT_SERVER_ARGS_JSON` 中；
-- wrapper 使用 `subprocess.Popen` + `os.read` 中继线程转发 stdio（Windows 管道修复，见 README「Windows 支持」）；
-- 可观测字段与 macOS 版一致：`wrapper_smoke`、`wrapper_invoked`、`last_wrapper_start`、`zcode_agent_override_supported`、`zcode_runtime_patchable`、`zcode_running`；
-- ZCode 不在默认路径时同样支持 `--zcode-app` / `ZCODE_APP_PATH`。
-
 ---
 
 ## English
+
+### How it works
+
+The ZCode desktop app reads these variables when starting agent-server:
+
+```text
+ZCODE_AGENT_SERVER_COMMAND
+ZCODE_AGENT_SERVER_ARGS_JSON
+```
+
+The installer points `ZCODE_AGENT_SERVER_COMMAND` at `~/.zcode-keysmith/bin/zcode-agent-wrapper.py`. The wrapper reads the bundled ZCode runtime (default `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`), caches a copy under the user directory, patches only the `customSystemPrompt` entrypoint so it prefers `~/.zcode-keysmith/system-role.md`, and launches that cached runtime with ZCode's own Electron node. It prefers the Helper executable so Dock does not treat the backend as another foreground ZCode.
+
+The runtime places `customSystemPrompt` into a context segment with `injectionTarget: "system"`, so the file enters the system-message path rather than a project instruction file. GLM ChatML wrappers (`<|im_start|>system:` / `<|im_end|>`) are stripped before write.
+
+The `v0.1.0` Release provides **GitHub-generated source archives only**, with no standalone binary assets, Desktop client, pip/npm package, `--recover` / `--restore`, or layered uninstall. Install from a source archive or clone the repo, then run `zcode-keysmith.py`. The documented platforms are macOS plus a local `ZCode.app`; **Windows support is provided by this fork** (run `zcode-keysmith-win.py`), which skips the macOS-only `launchctl` injection. Non-Darwin hosts skip `launchctl` injection.
+
+`install --dry-run` still reads the source prompt and checks that the local runtime is patchable. Preview fails if no recognizable ZCode install is present. Pass `--zcode-app` or `ZCODE_APP_PATH` for a non-default location.
 
 ### Observability
 
@@ -166,19 +212,17 @@ python3 zcode-keysmith.py verify --zcode-app /path/to/ZCode.app
 ZCODE_APP_PATH=/path/to/ZCode.app python3 zcode-keysmith.py install --dry-run
 ```
 
-### Verification
+### Uninstall leftovers
 
-```bash
-python3 -m py_compile zcode-keysmith.py
-python3 -m pytest tests -q
-python3 zcode-keysmith.py install --dry-run
-python3 zcode-keysmith.py doctor
-python3 zcode-keysmith.py verify
-```
+`uninstall --yes` renames these five managed files to `.bak_YYYYMMDD_HHMMSS`: `system-role.md`, `config.json`, the wrapper, the env script, and the LaunchAgent plist, then clears the current Keysmith entrypoint with `launchctl unsetenv`. It does not delete `~/.zcode-keysmith/` itself, nor `cache/`, `logs/`, or historical backups.
+
+There is no `recover` / `restore` subcommand. For a manual rollback, restore one matching set of `.bak_*` files using the `removed:` paths printed by uninstall, then run the restored `~/.zcode-keysmith/bin/zcode-keysmith-env.sh` (or log out and back in) to reload the launchd environment. Quit and reopen ZCode, start a fresh task, and run `python3 zcode-keysmith.py verify`. Moving the files back alone does not restore the current launchd environment cleared by uninstall.
+
+Install also creates `~/.zcode-keysmith/cache/` and `~/.zcode-keysmith/logs/`. The wrapper later writes a cached runtime copy and `logs/wrapper-start.jsonl`. Those paths are not among the five individually atomic install targets and are not cleaned by uninstall; the five files are not one cross-file transaction.
 
 ### Windows command reference
 
-On Windows, use `zcode-keysmith-win.py` with the same command structure:
+On Windows, use `zcode-keysmith-win.py` (a Windows port of the macOS installer) with the same command structure:
 
 ```bash
 python3 -m py_compile zcode-keysmith-win.py
@@ -190,10 +234,42 @@ python3 zcode-keysmith-win.py uninstall --dry-run
 python3 zcode-keysmith-win.py uninstall --yes
 ```
 
-Windows differences:
+Windows differences (see README "Windows support"):
 
-- Persistence goes through `HKCU\Environment` user environment variables (no LaunchAgent, no env script);
-- `ZCODE_AGENT_SERVER_COMMAND` points at `python.exe`; the wrapper path lives in `ZCODE_AGENT_SERVER_ARGS_JSON`;
-- The wrapper relays stdio with `subprocess.Popen` + `os.read` pump threads (Windows pipe fix, see README "Windows support");
+- **Persistence**: goes through `HKCU\Environment` user environment variables (no LaunchAgent, no env script); prior values are backed up to `~/.zcode-keysmith/backups/env-backup-*.json`, and a `WM_SETTINGCHANGE` broadcast is sent after writing;
+- `ZCODE_AGENT_SERVER_COMMAND` points at `python.exe`; the wrapper path lives in `ZCODE_AGENT_SERVER_ARGS_JSON` (Node `spawn` cannot execute a `.py` file directly);
+- **Uninstall**: clears the matching Keysmith entrypoint variables in `HKCU\Environment`; managed files are likewise renamed to `.bak_YYYYMMDD_HHMMSS`; `cache/`, `logs/`, and historical backups are kept;
+- The wrapper relays stdio with `subprocess.Popen` + `os.read` pump threads (Windows pipe fix: inherited-handle `subprocess.run` is unreliable and `BufferedReader.read(n)` blocks, so the agent exits after ~1.5s or requests stall for 180s until timeout);
+- **ZCode discovery**: checks `ZCODE_APP_PATH`, registry Uninstall keys, `%LOCALAPPDATA%\Programs\ZCode`, `%ProgramFiles%\ZCode`, and `D:\ZCode`;
 - Observability fields match the macOS version: `wrapper_smoke`, `wrapper_invoked`, `last_wrapper_start`, `zcode_agent_override_supported`, `zcode_runtime_patchable`, `zcode_running`;
 - `--zcode-app` / `ZCODE_APP_PATH` are supported for non-default ZCode locations.
+
+### Project layout
+
+```text
+zcode-keysmith/
+├── zcode-keysmith.py
+├── zcode-keysmith-win.py
+├── examples/
+│   └── system-role.md
+├── tests/
+│   └── test_zcode_keysmith.py
+├── docs/
+│   ├── reference.md
+│   ├── agent-install.md
+│   └── legacy/
+├── .gitignore
+├── README.md / README.en.md
+└── LICENSE
+```
+
+### Verification
+
+```bash
+python3 -m py_compile zcode-keysmith.py
+python3 -m py_compile zcode-keysmith-win.py
+python3 -m pytest tests -q
+python3 zcode-keysmith.py install --dry-run
+python3 zcode-keysmith.py doctor
+python3 zcode-keysmith.py verify
+```
