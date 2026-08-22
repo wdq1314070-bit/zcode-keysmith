@@ -213,6 +213,67 @@ def windows_registry_zcode_paths() -> list[Path]:
     return paths
 
 
+def windows_uninstall_zcode_paths() -> list[Path]:
+    """Locate ZCode via Add/Remove Programs (Uninstall) registry entries.
+
+    Covers custom install locations (e.g. D:\\ZCode) that register an
+    uninstaller but no App Paths entry.
+    """
+    if platform.system() != "Windows":
+        return []
+    import winreg
+
+    paths: list[Path] = []
+    roots = (
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+    )
+    for hive, subkey in roots:
+        try:
+            root = winreg.OpenKey(hive, subkey)
+        except OSError:
+            continue
+        with root:
+            for index in range(winreg.QueryInfoKey(root)[0]):
+                try:
+                    sub = winreg.OpenKey(root, winreg.EnumKey(root, index))
+                except OSError:
+                    continue
+                with sub:
+                    try:
+                        display, _ = winreg.QueryValueEx(sub, "DisplayName")
+                    except OSError:
+                        display = ""
+                    key_name = winreg.EnumKey(root, index)
+                    if "zcode" not in str(display or "").lower() and "zcode" not in key_name.lower():
+                        continue
+                    for value_name in ("InstallLocation", "DisplayIcon"):
+                        try:
+                            value, _ = winreg.QueryValueEx(sub, value_name)
+                        except OSError:
+                            continue
+                        if isinstance(value, str) and value.strip():
+                            candidate = Path(value.strip().strip('"'))
+                            if candidate.suffix.lower() == ".exe":
+                                candidate = candidate.parent
+                            if candidate.name.lower() == "zcode":
+                                paths.append(candidate)
+    return paths
+
+
+def windows_drive_root_zcode_paths() -> list[Path]:
+    """Common drive-root install locations such as D:\\ZCode."""
+    if platform.system() != "Windows":
+        return []
+    paths: list[Path] = []
+    for letter in "CDEFGH":
+        drive_root = Path(f"{letter}:/")
+        if drive_root.exists():
+            paths.append(drive_root / "ZCode")
+    return paths
+
+
 def discover_zcode_app_path() -> Path:
     env_app = os.environ.get("ZCODE_APP_PATH")
     candidates: list[Path] = []
@@ -221,6 +282,8 @@ def discover_zcode_app_path() -> Path:
     if platform.system() == "Windows":
         candidates.extend(windows_running_zcode_paths())
         candidates.extend(windows_registry_zcode_paths())
+        candidates.extend(windows_uninstall_zcode_paths())
+        candidates.extend(windows_drive_root_zcode_paths())
         path_executable = shutil.which("ZCode.exe")
         if path_executable:
             candidates.append(Path(path_executable))
