@@ -676,6 +676,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ORIGINAL_RUNTIME = pathlib.Path(os.environ.get("ZCODE_KEYSMITH_ORIGINAL") or {runtime_json})
@@ -786,6 +787,31 @@ def log_invocation(runtime: pathlib.Path, args: list[str]) -> None:
         pass
 
 
+def _pump(src, dst, close_on_eof: bool) -> None:
+    try:
+        fd = src.fileno()
+    except Exception:
+        fd = None
+    try:
+        while True:
+            if fd is not None:
+                chunk = os.read(fd, 65536)
+            else:
+                chunk = src.read(1)
+            if not chunk:
+                break
+            dst.write(chunk)
+            dst.flush()
+    except Exception:
+        pass
+    finally:
+        if close_on_eof:
+            try:
+                dst.close()
+            except Exception:
+                pass
+
+
 def main() -> int:
     runtime = patched_runtime_path()
     args = sys.argv[1:] or ["app-server", "--stdio"]
@@ -793,11 +819,23 @@ def main() -> int:
     env = os.environ.copy()
     env["ELECTRON_RUN_AS_NODE"] = "1"
     if os.name == "nt":
-        # Use Popen to inherit stdin/stdout/stderr directly for stable long-running JSON-RPC communication
+        # Direct handle inheritance is unreliable for ZCode's stdio pipes on some
+        # Windows hosts: the agent exits after ~1.5s with "ZCode agent transport
+        # closed", and BufferedReader.read(n) blocks until n bytes arrive.
+        # Relay through three pump threads using os.read, which returns as soon
+        # as any data is available on a Windows pipe.
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         proc = subprocess.Popen(
             [NODE_COMMAND, str(runtime), *args],
             env=env,
+            creationflags=creationflags,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
+        threading.Thread(target=_pump, args=(sys.stdin.buffer, proc.stdin, True), daemon=True).start()
+        threading.Thread(target=_pump, args=(proc.stdout, sys.stdout.buffer, False), daemon=True).start()
+        threading.Thread(target=_pump, args=(proc.stderr, sys.stderr.buffer, False), daemon=True).start()
         return proc.wait()
     os.execve(NODE_COMMAND, [NODE_COMMAND, str(runtime), *args], env)
     return 127

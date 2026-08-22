@@ -179,7 +179,7 @@ def test_rendered_wrapper_is_valid_python_and_uses_configured_cache_dir(tmp_path
     assert "acquire_cache_lock" in wrapper_text
     assert "subprocess.Popen" in wrapper_text
     assert "proc.wait()" in wrapper_text
-    # Popen inherits stdin/stdout/stderr directly for stable JSON-RPC communication
+    # Windows relays stdio through pump threads (os.read) for stable JSON-RPC communication
     assert "env=env" in wrapper_text
 
 
